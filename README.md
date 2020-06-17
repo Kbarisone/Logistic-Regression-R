@@ -1,2 +1,243 @@
 # Logistic-Regression-R
 Practice with logistic regression in R
+
+---
+title: "HW02 - Logistic Regression"
+author: "Kyle Barisone"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+library(kableExtra)
+library(ggplot2)  
+library(dplyr)
+library(leaps)
+library(pander)
+library(ROCR)
+library(caret)
+```
+##PMA 12.1
+p = .20 
+odds = .2/1-.2 = .25
+
+So the odds are 1 hit for every 4 attempts not getting a hit. I would rather be told the first option because it does not mention failed attempts. Focusing on failed attempts is not something you want to think about in baseball since they happen so often.
+
+## PMA6 12.7 & 12.8
+#First we will fit the acute model
+
+```{r}
+depress <- read.delim("https://norcalbiostat.netlify.com/data/depress_081217.txt", 
+                  sep="\t", header=TRUE)
+acute.model <- glm(formula = acuteill ~ age + educat + income + cesd + drink,
+                      family = 'binomial', data = depress)
+
+backward_aic_model <- step(acute.model, direction = "backward", trace = 1)
+
+pander(summary(acute.model))
+```
+
+#Next we fit the chronic model
+```{r}
+chronic.model <- glm(formula = chronill ~ age + educat + income + cesd + drink,
+                      family = 'binomial', data = depress)
+
+backward_aic_model <- step(chronic.model, direction = "backward", trace = 1)
+
+pander(summary(chronic.model))
+```
+
+Depression (CESD) and age are both good predictors however depression seems to predict the chronic model much more accurately than the accute model. Meaning depression could have an effect on whether or not someone is chronically ill. The age estimate is positive for chronic illness and negative for acute illness.
+
+##3a Explore all measures in question using summary tables. Comment on any unusual values.
+
+
+```{r}
+EQ <- read.delim("https://norcalbiostat.netlify.com/data/Earthq.txt", 
+                  sep="", header=TRUE)
+colnames(EQ)[colnames(EQ)=="V127"] <- "Home_Damaged"
+colnames(EQ)[colnames(EQ)=="V173"] <- "Evacuate"
+colnames(EQ)[colnames(EQ)=="W238"] <- "Emotional_inj."
+colnames(EQ)[colnames(EQ)=="W220"] <- "Physical_Inj"
+colnames(EQ)[colnames(EQ)=="V449"] <- "Own_or_Rent"
+colnames(EQ)[colnames(EQ)=="V455"] <- "Marital_Status"
+colnames(EQ)[colnames(EQ)=="V461"] <- "School_Grade"
+
+EQ$Physical_Inj <- ifelse(EQ$Physical_Inj==8, NA, EQ$Physical_Inj)
+EQ$Evacuate <- ifelse(EQ$Evacuate==8, NA, EQ$Evacuate)
+EQ$Home_Damaged <- ifelse(EQ$Home_Damaged==8, NA, EQ$Home_Damaged)
+EQ$Emotional_inj. <- ifelse(EQ$Emotional_inj.=="8", NA, EQ$Emotional_inj.)
+EQ$Physical_Inj <- factor(EQ$Physical_Inj, labels=c("yes", "no"))
+EQ$Evacuate <- factor(EQ$Evacuate, labels=c("yes", "no"))
+
+
+EQ$NEWETHN <- ifelse(EQ$NEWETHN==".", NA, EQ$NEWETHN)
+EQ$NEWETHN <-factor(EQ$NEWETHN, labels = c("White","Hispanic", "Native American", "Asian/Pacific Islander", "African American", "Other")) 
+pander(summary(EQ$NEWETHN), caption="Ethnicities")
+
+EQ$RSEX <- factor(EQ$RSEX, labels=c("Male", "Female"))
+pander(summary(EQ$RSEX), caption="Gender")
+
+EQ <- EQ[EQ$Own_or_Rent %in% c("1", "5"),]
+EQ$Own_or_Rent <- factor(EQ$Own_or_Rent, labels=c("own", "rent"))
+pander(summary(EQ$Own_or_Rent), caption="Home Ownership")
+
+EQ$RAGE <- as.numeric(EQ$RAGE)
+pander(summary(EQ$RAGE),caption= "Age")
+
+EQ$Emotional_inj. <- factor(EQ$Emotional_inj., labels=c("yes", "no"))
+pander(summary(EQ$Emotional_inj.),caption = "Emotional Injury")
+```
+
+Values that stood out to me were the "." data values under the ethnicity variable. In addition many of the variables have yes, no, or dont know as options. In emotional injury, physical injury, home damage, and evacuation there is one data point that is dont know which i changed to NA for some of my analysis. Because they all only have one data value labeled as dont know this should not affect the outcome of the analysis.
+
+##b) Fit a logistic regression model on emotional injury as the outcome using the variables listed above as predictors. Create a table of odds ratios with 95% confidence intervals for each predictor. Interpret each (except the intercept).
+
+```{r, warning=FALSE, message=FALSE}
+emotional_model <- glm(Emotional_inj. ~ Own_or_Rent + RSEX + NEWETHN + RAGE, data=EQ, family="binomial")
+pander(summary(emotional_model))
+
+or.out <- data.frame(
+OR = exp(coef(emotional_model)),
+LCL = exp(confint(emotional_model))[,1],
+UCL = exp(confint(emotional_model))[,2],
+p = format.pval(coef(summary(emotional_model))[,4], digits=1, eps=.001)
+)
+
+
+rownames(or.out) <- c("Intercept", "Renter", "Female", "Hispanic", "Native American", "Asian/Pacific", "African American", "Other", "Age")
+
+kable(or.out[-1,], digits=2) %>%
+kable_styling(full_width = FALSE, "striped") %>%
+add_header_above(c(" "=2, "95% CI"=2, " "=1))
+```
+
+After controlling for homeowner status, sex, and ethnicity, age did not have much of an affect on the probability of suffering an emotional injury from the earthquake (95% CI: 0.98, 1.01)(p.val = .27).
+
+After controlling for age, homeowner status, and ethnicity, females were 0.51 (95% CI: 0.79, 0.94)(p.val < .001) times more likely to have suffered an emotional injury from the earthquake compared to males.
+
+After controlling for age, sex, and homeowner status, Hispanic respondents were .72 (95% CI: 0.46,
+1.12)(p.val = .15) times more likely to have suffered an emotional injury from the earthquake compared to White respondents.
+
+After controlling for age, sex, and homeowner status, Native American respondents were 2.32 (95%
+CI: 0.33, 46.34)(p.val = .46) more less likely to have suffered an emotional injury from the earthquake compared to White respondents.
+
+• After controlling for age, sex, and homeowner status, Asian/Pacific Islander respondents were 1.6 (95% CI: 0.68, 4.23)(p.val = .31) times less likely to have suffered an emotional injury from the earthquake compared to White respondents.
+
+After controlling for age, sex, and homeowner status, African American respondents were .57 (95%
+CI: 0.3, 1.10)(p.val = .09) times more likely to have suffered an emotional injury from the earthquake compared
+to White respondents.
+
+After controlling for age, sex, and ethnicity, people who Rent their home are 1.03 (95% CI: 0.51, 1.15)(p.val = .21) times more likely than people who own their home to have suffered an emotional injury from the
+earthquake.
+
+##c)Is there an interaction effect between gender and home ownership? That is, are the estimated effects of home ownership upon reporting emotional injuries different for men and women, controlling for age and ethnicity?
+
+```{r}
+interaction.model <- glm(Emotional_inj. ~ Own_or_Rent + RSEX + NEWETHN + RAGE + Own_or_Rent*RSEX, data=EQ, family="binomial")
+
+pander(summary(interaction.model)) 
+
+```
+
+Since the interaction variable has a p-value of (.455), we can conclude there is not an interaction effect between gender and home ownership.
+
+##D)Build a model to predict whether or not the home was evacuated. Choose from the following predictor variables: MMI, home damage, physical injuries, emotional injuries, age, sex, education, etnicity, marital status, home owner status. You may or may not want to categorize some of the continuous measurements. Where appropriate, consider interaction terms as well.
+
+```{r}
+summary(regsubsets(Evacuate ~ MMI + Home_Damaged + Physical_Inj + Emotional_inj. + RAGE + RSEX + School_Grade + NEWETHN + Marital_Status + Own_or_Rent,data=EQ))
+
+EQ$Evacuate <- factor(EQ$Evacuate, labels=c("yes", "no"))
+evacuate_model <- glm(Evacuate ~ MMI + Home_Damaged + Emotional_inj. + School_Grade, data=EQ, family="binomial")
+pander(summary(evacuat_model))
+```
+
+
+##1) Perform a binary logistic regression analysis using the Parental HIV data to model the probability of having been absent from school without a reason (variable HOOKEY). Find the variables that best predict whether an adolescent had been absent without a reason or not. Use a hefty dose of common sense here, not all variables are reasonable to use (e.g. using the # of times a student skips school to predict whether or not they will predict school)
+
+```{r}
+hiv <- read.delim("https://norcalbiostat.netlify.com/data/PARHIV_081217.txt", 
+                  sep="\t", stringsAsFactors = FALSE, header=TRUE)
+
+hiv$HOOKEY <- ifelse(hiv$HOOKEY=="1", 0, 1)
+
+summary(regsubsets(HOOKEY ~ AGE + GENDER + LIVWITH + SIBLINGS + JOBMO + EDUMO + HOWREL + ATTSERV + AGEALC + FINSIT + AGESMOKE + LIKESCH, data=hiv))
+
+
+
+```
+
+The variables that best predict hookey from the model i made are age, the job of the mother, the amount of siblings, and the ages they started smoking as well as drinking.
+
+##2) Use the default value for the predict() function to create a vector of predictions for each student.
+
+```{r}
+hookey_model <- glm(HOOKEY~AGE + LIVWITH + SIBLINGS + JOBMO + EDUMO + AGEALC + AGESMOKE , family = 'binomial', data=hiv)
+
+model.pred.prob <- predict(hookey_model, type='response')
+set.seed(12345) 
+plot.mpp <- data.frame(pred.prob = model.pred.prob, 
+                       pred.class = rbinom(n=length(model.pred.prob), size=1, p=model.pred.prob),
+                       truth = hookey_model$y)
+
+pander(head(plot.mpp))
+
+plot.mpp <- plot.mpp %>%
+mutate(pred.class = factor(pred.class, labels=c("No","Hookey")),
+truth = factor(truth,
+labels=c("No", "Hookey")))
+table(plot.mpp$pred.class, plot.mpp$truth)
+```
+
+
+##3) Create a confusion matrix for these predictions and interpret: accuracy, balanced accuracy, sensitivity, specificity, PPV, NPV.
+
+```{r}
+confusionMatrix(plot.mpp$pred.class, plot.mpp$truth, positive="Hookey")
+```
+
+Accuracy: 73.03% of the time we are able to predict whether someone plays hookey.
+Balanced Accuracy: 63.84% 
+Sensitivity (True Positive Rate): 79.69% were correctly predicted to play hookey.
+Specificity (True Negative Rate): 56% were correctly predicted to not skip school.
+PPV (Positive Predictive Value): 82.26% of individuals who were predicted to play hookey were predicted correctly.
+NPV (Negative Predicted Value): 51.85% of individuals who were predicted to not skip school were predicted correctly.
+
+
+##4) Describe the distribution of predicted probabilities by true group membership. Use a violin + jitter plot as shown in the notes. What do you notice?
+
+
+```{r}
+ggplot(plot.mpp, aes(x=truth, y=pred.prob, fill=truth)) + 
+      geom_jitter(width=.2) + geom_violin(alpha=.4) + theme_bw()
+```
+
+Looking at the Jitter plot above, my model is much more accurate when it is predicting if some one is going to skip school rather than not going to play hookey. Overall, the plot on the right shows that our model was able to predict whether a student played hookey most of the time.
+
+##5) Find the best cutoff point to discriminate between adolescents who were absent without a reason and those who were not by using an ROC curve and maximizing accuracy.
+
+
+```{r}
+pr <- prediction(model.pred.prob, hookey_model$y)
+perf <- performance(pr, measure="tpr", x.measure="fpr")
+plot(perf, colorize=TRUE, lwd=3, print.cutoffs.at=c(seq(0,1,by=0.1)))
+
+perf.f1 <- performance(pr,measure="f")
+perf.acc <- performance(pr,measure="acc")
+
+par(mfrow=c(1,2))
+plot(perf.f1)
+plot(perf.acc)
+
+perf.acc <- performance(pr,measure="acc")
+max.f1 <- max(perf.acc@y.values[[1]], na.rm=TRUE)
+row.with.max <- which(perf.acc@y.values[[1]]==max.f1)
+pander(cutoff.value <- perf.acc@x.values[[1]][row.with.max])
+auc <- performance(pr, measure='auc')
+auc@y.values
+```
+
+A cutoff of 0.42 provides the maximum accuracy measure and the area under the ROC curve is .8759. This tells us that our model is accurate.
